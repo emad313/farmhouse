@@ -1,0 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base; @tailwind components; @tailwind utilities;
+:root{font-family:Inter,sans-serif;color:#f7f6ef;background:#0a120d;font-synthesis:none}
+*{box-sizing:border-box}html{scroll-behavior:auto;background:#0a120d}body{margin:0;min-width:320px;overflow-x:hidden}
+.glass{background:rgba(255,255,255,.085);border:1px solid rgba(255,255,255,.16);box-shadow:0 20px 80px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.text-shadow{text-shadow:0 3px 24px rgba(0,0,0,.28)}
+.video-vignette{background:linear-gradient(180deg,rgba(0,0,0,.34),transparent 24%,transparent 66%,rgba(0,0,0,.46)),radial-gradient(circle at center,transparent 38%,rgba(0,0,0,.25))}
+@keyframes floatSoft{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-8px,0)}} .float-soft{animation:floatSoft 5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.float-soft{animation:none}}
