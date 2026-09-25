@@ -33,14 +33,14 @@ const segments: Segment[] = [
     body: 'A living farm shaped by Bangladesh, where green fields, water, animals and home exist as one ecosystem.',
     stat: '100%',
     statLabel: 'close to nature',
-    accent: 'from-[#183d25]/30',
+    accent: 'rgba(24, 61, 37, 0.3)',
   },
   {
     id: 'home',
     kicker: '02 / THE FARMHOUSE',
     title: 'A home rooted in nature.',
     body: 'Modern comfort meets familiar rural textures, open air, warm materials and a slower way of living.',
-    accent: 'from-[#473822]/30',
+    accent: 'rgba(71, 56, 34, 0.3)',
   },
   {
     id: 'cows',
@@ -50,7 +50,7 @@ const segments: Segment[] = [
     stat: '24/7',
     statLabel: 'care & attention',
     image: '/assets/cow.png',
-    accent: 'from-[#31502b]/35',
+    accent: 'rgba(49, 80, 43, 0.35)',
   },
   {
     id: 'dairy',
@@ -59,7 +59,7 @@ const segments: Segment[] = [
     body: 'Freshness starts with the way the farm is cared for, long before anything reaches the table.',
     stat: 'LOCAL',
     statLabel: 'grown & produced',
-    accent: 'from-[#31543c]/30',
+    accent: 'rgba(49, 84, 60, 0.3)',
   },
   {
     id: 'chicken',
@@ -67,7 +67,7 @@ const segments: Segment[] = [
     title: 'Room to roam.',
     body: 'Free-range chickens move through open, green spaces as part of the farm’s natural cycle.',
     image: '/assets/chickens.png',
-    accent: 'from-[#4e5c2d]/30',
+    accent: 'rgba(78, 92, 45, 0.3)',
   },
   {
     id: 'goat',
@@ -75,15 +75,15 @@ const segments: Segment[] = [
     title: 'Life in motion.',
     body: 'Goats, grass, shade and fresh air come together in a simple, natural environment.',
     image: '/assets/goat.png',
-    accent: 'from-[#3d4d25]/30',
+    accent: 'rgba(61, 77, 37, 0.3)',
   },
   {
     id: 'fields',
     kicker: '07 / ORGANIC CULTIVATION',
     title: 'From soil to table.',
     body: 'Seasonal vegetables grow in rich soil, surrounded by water, trees and the everyday life of the farm.',
-    image: '/assets/vegetables.png',
-    accent: 'from-[#24542f]/40',
+    image: '/assets/vegetable.png',
+    accent: 'rgba(36, 84, 47, 0.4)',
   },
   {
     id: 'pond',
@@ -91,14 +91,14 @@ const segments: Segment[] = [
     title: 'Every ecosystem needs water.',
     body: 'A quiet pond gathers the landscape together and gives the farm another layer of life.',
     image: '/assets/pond.jpg',
-    accent: 'from-[#153e45]/40',
+    accent: 'rgba(21, 62, 69, 0.4)',
   },
   {
     id: 'garden',
     kicker: '09 / THE GARDEN',
     title: 'A softer kind of abundance.',
     body: 'Fruit trees, flowers, herbs and vegetables turn the spaces between buildings into living gardens.',
-    accent: 'from-[#2d542c]/35',
+    accent: 'rgba(45, 84, 44, 0.35)',
   },
   {
     id: 'ecosystem',
@@ -107,7 +107,7 @@ const segments: Segment[] = [
     body: 'Home, livestock, crops and water working together as one connected landscape.',
     stat: '01',
     statLabel: 'living ecosystem',
-    accent: 'from-[#173c25]/45',
+    accent: 'rgba(23, 60, 37, 0.45)',
   },
 ];
 
@@ -115,281 +115,180 @@ const videos = segments.map(
   (_, i) => `/assets/segment-${String(i + 1).padStart(2, '0')}.mp4`
 );
 
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
 function App() {
   const vids = useRef<(HTMLVideoElement | null)[]>([]);
 
-  /*
-   * Scroll engine
-   */
-  const animationFrame = useRef<number | null>(null);
+  // Tall scroll track; the sticky stage inside it holds the videos.
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const progressBar = useRef<HTMLDivElement | null>(null);
 
-  // Where the user's scroll currently wants the video to be.
+  // Where the user's scroll wants the video to be (0 → 1).
   const targetProgress = useRef(0);
 
-  // Where the video currently is.
+  // Where the video currently is (eased toward target).
   const currentProgress = useRef(0);
-
-  // Last time we assigned to each video's currentTime.
-  const lastVideoTime = useRef<number[]>([]);
 
   // Current segment without forcing React state on every frame.
   const activeRef = useRef(0);
 
-  // Viewport height for navigation.
-  const viewportHeight = useRef(
-    typeof window !== 'undefined' ? window.innerHeight : 800
-  );
-
   const [active, setActive] = useState(0);
   const [menu, setMenu] = useState(false);
 
-  const [totalHeight, setTotalHeight] = useState(
-    typeof window !== 'undefined'
-      ? segments.length * window.innerHeight
-      : segments.length * 800
-  );
-
   useEffect(() => {
-    lastVideoTime.current = segments.map(() => -1);
-
-    const clamp = (
-      value: number,
-      min: number,
-      max: number
-    ) => {
-      return Math.max(min, Math.min(max, value));
-    };
+    let frame: number | null = null;
+    let lastTime = 0;
 
     /*
-     * Convert page scroll into a normalized 0 → 1 value.
+     * Convert the track's position into a normalized 0 → 1 value.
+     * Measured from the element itself, so mobile URL-bar resizes
+     * never need a React re-render or a height recalculation.
      */
     const updateScrollTarget = () => {
-      const maxScroll = Math.max(1, totalHeight);
+      const track = trackRef.current;
+      if (!track) return;
 
-      targetProgress.current = clamp(
-        window.scrollY / maxScroll,
-        0,
-        0.999999
-      );
+      const rect = track.getBoundingClientRect();
+      const range = Math.max(1, rect.height - window.innerHeight);
+
+      targetProgress.current = clamp(-rect.top / range, 0, 0.999999);
     };
 
     /*
-     * Tell the browser to preload a video.
-     *
-     * We mainly preload the current and next video,
-     * instead of forcing all 10 videos to load aggressively.
+     * Preload the current segment and its neighbours so the
+     * crossfade in either scroll direction has frames ready.
      */
     const prepareVideo = (index: number) => {
       const video = vids.current[index];
+      if (!video || video.preload === 'auto') return;
 
-      if (!video) return;
+      video.preload = 'auto';
+      video.load();
+    };
 
-      if (video.preload !== 'auto') {
-        video.preload = 'auto';
-        video.load();
+    const prepareAround = (index: number) => {
+      for (let i = index - 1; i <= index + 1; i++) {
+        if (i >= 0 && i < segments.length) prepareVideo(i);
+      }
+    };
+
+    /*
+     * Seek a video to a local 0 → 1 position.
+     *
+     * The clips are encoded all-intra (every frame is a keyframe),
+     * so a seek is a single-frame decode. We still never stack a
+     * new seek on top of one that is in flight.
+     */
+    const seek = (video: HTMLVideoElement, local: number) => {
+      if (video.readyState < 1 || !(video.duration > 0) || video.seeking) {
+        return;
+      }
+
+      // Don't seek to the absolute final frame (browser edge cases).
+      const time = local * Math.max(0, video.duration - 0.05);
+
+      if (Math.abs(video.currentTime - time) > 0.02) {
+        video.currentTime = time;
       }
     };
 
     /*
      * MAIN SMOOTH VIDEO LOOP
      *
-     * This runs continuously with requestAnimationFrame.
+     * scroll → targetProgress → eased currentProgress → video.currentTime
      *
-     * IMPORTANT:
-     *
-     * We do NOT directly do:
-     *
-     * video.currentTime = scrollPosition
-     *
-     * Instead:
-     *
-     * scroll
-     *   ↓
-     * targetProgress
-     *   ↓
-     * smooth interpolation
-     *   ↓
-     * video.currentTime
+     * The loop only runs while there is distance left to cover, and
+     * easing is time-based so it feels the same at 60Hz and 120Hz.
      */
-    const renderVideo = () => {
-      const difference =
-        targetProgress.current - currentProgress.current;
+    const render = (now: number) => {
+      const dt = lastTime ? Math.min(0.1, (now - lastTime) / 1000) : 1 / 60;
+      lastTime = now;
 
-      /*
-       * The larger the difference, the faster we catch up.
-       * When close to target, movement becomes softer.
-       */
-      const ease =
-        Math.abs(difference) > 0.08
-          ? 0.18
-          : 0.12;
+      const difference = targetProgress.current - currentProgress.current;
 
-      currentProgress.current += difference * ease;
-
-      /*
-       * Stop tiny endless movements.
-       */
-      if (Math.abs(difference) < 0.00003) {
+      if (Math.abs(difference) < 0.00005) {
         currentProgress.current = targetProgress.current;
+      } else {
+        currentProgress.current += difference * (1 - Math.exp(-dt * 9));
       }
 
-      /*
-       * Convert global progress into:
-       *
-       * segment index
-       * local segment progress
-       */
-      const scaledProgress =
-        currentProgress.current * segments.length;
+      const scaled = currentProgress.current * segments.length;
+      const segmentIndex = Math.min(segments.length - 1, Math.floor(scaled));
+      const local = clamp(scaled - segmentIndex, 0, 0.999999);
 
-      const segmentIndex = Math.min(
-        segments.length - 1,
-        Math.floor(scaledProgress)
-      );
-
-      const localProgress = clamp(
-        scaledProgress - segmentIndex,
-        0,
-        0.999999
-      );
-
-      /*
-       * Segment changed.
-       */
       if (segmentIndex !== activeRef.current) {
         activeRef.current = segmentIndex;
-
         setActive(segmentIndex);
-
-        // Current video
-        prepareVideo(segmentIndex);
-
-        // Next video
-        prepareVideo(
-          Math.min(
-            segmentIndex + 1,
-            segments.length - 1
-          )
-        );
+        prepareAround(segmentIndex);
       }
 
       const video = vids.current[segmentIndex];
+      if (video) seek(video, local);
 
-      if (
-        video &&
-        video.readyState >= 2 &&
-        video.duration > 0
-      ) {
-        /*
-         * Don't seek to the absolute final frame.
-         * This avoids some browser edge cases.
-         */
-        const targetTime =
-          localProgress *
-          Math.max(0, video.duration - 0.02);
-
-        const previousTime =
-          lastVideoTime.current[segmentIndex] ?? -1;
-
-        /*
-         * THIS IS IMPORTANT.
-         *
-         * Previously the code was seeking whenever:
-         *
-         * Math.abs(currentTime - target) > 0.025
-         *
-         * That can create a huge number of decoder seeks.
-         *
-         * Now we only issue a seek when there is
-         * meaningful movement.
-         */
-        if (
-          previousTime < 0 ||
-          Math.abs(targetTime - previousTime) > 0.045
-        ) {
-          video.currentTime = targetTime;
-
-          lastVideoTime.current[segmentIndex] =
-            targetTime;
-        }
+      if (progressBar.current) {
+        progressBar.current.style.transform = `scaleX(${currentProgress.current})`;
       }
 
-      animationFrame.current =
-        requestAnimationFrame(renderVideo);
+      // Keep running until settled and the final seek has landed.
+      if (
+        currentProgress.current !== targetProgress.current ||
+        (video && video.seeking)
+      ) {
+        frame = requestAnimationFrame(render);
+      } else {
+        frame = null;
+        lastTime = 0;
+      }
+    };
+
+    const wake = () => {
+      if (frame === null) frame = requestAnimationFrame(render);
     };
 
     const handleScroll = () => {
       updateScrollTarget();
+      wake();
     };
 
-    const handleResize = () => {
-      viewportHeight.current =
-        window.innerHeight;
+    // A late-loading video needs one more pass to show its frame.
+    const handleLoaded = () => wake();
 
-      setTotalHeight(
-        segments.length * window.innerHeight
-      );
-
-      updateScrollTarget();
-    };
-
-    window.addEventListener(
-      'scroll',
-      handleScroll,
-      { passive: true }
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+    vids.current.forEach((video) =>
+      video?.addEventListener('loadeddata', handleLoaded)
     );
 
-    window.addEventListener(
-      'resize',
-      handleResize
-    );
-
-    /*
-     * Initial position.
-     */
     updateScrollTarget();
-
-    /*
-     * Start first videos early.
-     */
-    prepareVideo(0);
-    prepareVideo(1);
-
-    /*
-     * Start smooth render loop.
-     */
-    animationFrame.current =
-      requestAnimationFrame(renderVideo);
+    currentProgress.current = targetProgress.current;
+    prepareAround(0);
+    wake();
 
     return () => {
-      window.removeEventListener(
-        'scroll',
-        handleScroll
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+      vids.current.forEach((video) =>
+        video?.removeEventListener('loadeddata', handleLoaded)
       );
-
-      window.removeEventListener(
-        'resize',
-        handleResize
-      );
-
-      if (animationFrame.current) {
-        cancelAnimationFrame(
-          animationFrame.current
-        );
-      }
+      if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [totalHeight]);
+  }, []);
 
   /*
    * Navigation jump.
    */
   const jump = (index: number) => {
-    const height = viewportHeight.current;
+    const track = trackRef.current;
+    if (!track) return;
+
+    const trackTop = track.getBoundingClientRect().top + window.scrollY;
+    const segmentHeight =
+      (track.offsetHeight - window.innerHeight) / segments.length;
 
     window.scrollTo({
-      top:
-        index * height +
-        height * 0.1,
+      top: trackTop + (index + 0.1) * segmentHeight,
       behavior: 'smooth',
     });
 
@@ -401,14 +300,11 @@ function App() {
   return (
     <>
       <div
-        style={{
-          height:
-            totalHeight +
-            viewportHeight.current,
-        }}
+        ref={trackRef}
+        style={{ height: `${(segments.length + 1) * 100}vh` }}
         className="relative bg-[#0a120d]"
       >
-        <div className="fixed inset-0 overflow-hidden bg-black">
+        <div className="stage sticky top-0 overflow-hidden bg-black">
 
           {/* =========================
               BACKGROUND VIDEOS
@@ -423,17 +319,14 @@ function App() {
               src={src}
               muted
               playsInline
-              preload={
-                index < 2
-                  ? 'auto'
-                  : 'metadata'
-              }
+              disablePictureInPicture
+              preload={index < 2 ? 'auto' : 'metadata'}
               className={`
                 absolute inset-0
                 h-full w-full
                 object-cover
                 transition-opacity
-                duration-700
+                duration-500
                 ${
                   active === index
                     ? 'opacity-100'
@@ -447,16 +340,22 @@ function App() {
               VIDEO OVERLAY
           ========================== */}
 
-          <div
-            className={`
-              absolute inset-0
-              bg-gradient-to-b
-              ${segment.accent}
-              pointer-events-none
-              transition-all
-              duration-700
-            `}
-          />
+          {/* Gradients can't transition, so each accent is its own layer that fades. */}
+          {segments.map((item, index) => (
+            <div
+              key={item.id}
+              style={{
+                backgroundImage: `linear-gradient(to bottom, ${item.accent}, transparent)`,
+              }}
+              className={`
+                absolute inset-0
+                pointer-events-none
+                transition-opacity
+                duration-700
+                ${active === index ? 'opacity-100' : 'opacity-0'}
+              `}
+            />
+          ))}
 
           <div className="video-vignette absolute inset-0 pointer-events-none" />
 
@@ -528,7 +427,7 @@ function App() {
           <main className="absolute inset-0 z-30">
 
             <div className="absolute left-5 right-5 top-[22%] sm:left-10 lg:left-[10vw] lg:top-[24%]">
-              <div className="max-w-5xl">
+              <div key={segment.id} className="segment-in max-w-5xl">
 
                 <div className="mb-5 flex items-center gap-3 text-[10px] uppercase tracking-[.28em] text-white/65 sm:text-xs">
                   <span className="h-px w-8 bg-white/50" />
@@ -536,7 +435,6 @@ function App() {
                 </div>
 
                 <h1
-                  key={segment.id}
                   className="text-shadow max-w-5xl text-[15vw] font-medium leading-[.83] tracking-[-.075em] text-white sm:text-[10vw] lg:text-[8.2vw]"
                 >
                   {segment.title}
@@ -549,7 +447,7 @@ function App() {
                   </p>
 
                   {segment.stat && (
-                    <div className="glass shrink-0 rounded-2xl px-5 py-4 float-soft">
+                    <div className="glass shrink-0 rounded-2xl px-5 py-4">
                       <div className="text-3xl font-medium tracking-[-.06em]">
                         {segment.stat}
                       </div>
@@ -567,9 +465,10 @@ function App() {
             {/* IMAGE */}
             {segment.image && (
               <img
+                key={segment.image}
                 src={segment.image}
                 alt=""
-                className="pointer-events-none absolute bottom-[9%] right-[4%] hidden max-h-[44vh] max-w-[34vw] object-contain drop-shadow-[0_30px_45px_rgba(0,0,0,.45)] lg:block"
+                className="pointer-events-none absolute bottom-[9%] right-[4%] hidden max-h-[44vh] max-w-[34vw] object-contain drop-shadow-[0_30px_45px_rgba(0,0,0,.45)] segment-in lg:block"
               />
             )}
 
@@ -585,14 +484,9 @@ function App() {
 
                 <div className="h-px w-20 overflow-hidden bg-white/20 sm:w-36">
                   <div
-                    className="h-full bg-white transition-all"
-                    style={{
-                      width: `${
-                        ((active + 1) /
-                          segments.length) *
-                        100
-                      }%`,
-                    }}
+                    ref={progressBar}
+                    className="h-full origin-left bg-white will-change-transform"
+                    style={{ transform: 'scaleX(0)' }}
                   />
                 </div>
 
